@@ -8,7 +8,7 @@ process TEST_SUCCESS {
 
     script:
     """
-    exit 0
+    funnel run 'exit 0' --wait
     """
 }
 
@@ -21,7 +21,7 @@ process TEST_CREATE_FILE {
         path("*.txt"), emit: outfile
 
     """
-    touch test.txt
+    funnel run 'touch \$output' --stdout test.txt --out output=test.txt --wait --workdir /tmp
     """
 }
 
@@ -34,9 +34,9 @@ process TEST_CREATE_FOLDER {
         path("test"), type: 'dir', emit: outfolder
 
     """
-    mkdir -p test
-    touch test/test1.txt
-    touch test/test2.txt
+    funnel run 'mkdir -p \$output
+    touch \$output/test1.txt
+    touch \$output/test2.txt' --out-dir output=test --wait --workdir /tmp
     """
 }
 
@@ -52,7 +52,7 @@ process TEST_INPUT {
         stdout
 
     """
-    cat $input
+    funnel run 'cat \$input' --in input=$input --wait --workdir /tmp
     """
 }
 
@@ -61,11 +61,14 @@ process TEST_BIN_SCRIPT {
     Runs a script from the bin/ directory
     */
 
+    input:
+        path input
+
     output:
         path("*.txt")
 
     """
-    bash run.sh
+    funnel run 'sh \$input' --in input=$input --stdout test.txt --wait --workdir /tmp
     """
 }
 
@@ -81,7 +84,7 @@ process TEST_STAGE_REMOTE {
         stdout
 
     """
-    cat $input
+    funnel run 'cat \$input' --in input=$input --wait
     """
 }
 
@@ -97,7 +100,7 @@ process TEST_PASS_FILE {
         path "out.txt", emit: outfile
 
     """
-    cp "$input" "out.txt"
+    funnel run 'cp "\$input" "\$output"' --in input=$input --out output=out.txt --wait --workdir /tmp
     """
 }
 
@@ -113,7 +116,7 @@ process TEST_PASS_FOLDER {
         path "out", type: 'dir', emit: outfolder
 
     """
-    cp -rL $input out
+    funnel run 'cp -rL "\$input" "\$output"' --in input=$input --out-dir output=out --wait --workdir /tmp 
     """
 }
 
@@ -122,14 +125,15 @@ process TEST_PUBLISH_FILE {
     Creates a file on the worker node and uploads to the publish directory.
     */
 
-
     publishDir { params.outdir ?: file(workflow.workDir).resolve("outputs").toUriString()  }, mode: 'copy'
 
     output:
         path("*.txt")
 
     """
-    touch test.txt
+    export publishDir=${params.outdir ?: file(workflow.workDir).resolve("outputs").toUriString()}
+    
+    funnel run 'touch \$output' --out output=test.txt --wait --workdir \$publishDir
     """
 }
 
@@ -144,9 +148,11 @@ process TEST_PUBLISH_FOLDER {
         path("test", type: 'dir')
 
     """
-    mkdir -p test
-    touch test/test1.txt
-    touch test/test2.txt
+    export publishDir=${params.outdir ?: file(workflow.workDir).resolve("outputs").toUriString()}
+    
+    funnel run 'mkdir -p \$output
+    touch \$output/test1.txt
+    touch \$output/test2.txt' --out-dir output=test --wait --workdir \$publishDir
     """
 }
 
@@ -161,7 +167,7 @@ process TEST_IGNORED_FAIL {
         stdout
 
     """
-    exit 1
+    funnel run 'exit 1' --wait
     """
 }
 
@@ -173,8 +179,8 @@ process TEST_MV_FILE {
         path "output.txt"
 
     """
-    touch test.txt
-    mv test.txt output.txt
+    funnel run 'touch test.txt
+    mv test.txt \$output' --out output=output.txt --wait --workdir /tmp
     """
 
 }
@@ -188,10 +194,10 @@ process TEST_MV_FOLDER_CONTENTS {
         path "out", type: 'dir', emit: outfolder
 
     """
-    mkdir -p test
-    touch test/test.txt
-    mkdir -p out/
-    mv test/* out/
+    funnel run 'mkdir -p test
+    echo "test!" > test/test.txt
+    mkdir -p \$output
+    mv test/* \$output' --out-dir output=out --wait --workdir /tmp
     """
 }
 
@@ -205,13 +211,14 @@ workflow NF_CANARY {
             .set { test_file }
 
         remote_file = params.remoteFile ? Channel.fromPath(params.remoteFile) : Channel.empty()
+        bin_file = Channel.fromPath('bin/run.sh')
 
         // Run tests
         TEST_SUCCESS()
         TEST_CREATE_FILE()
         TEST_CREATE_FOLDER()
         TEST_INPUT(test_file)
-        TEST_BIN_SCRIPT()
+        TEST_BIN_SCRIPT(bin_file)
         TEST_STAGE_REMOTE(remote_file)
         TEST_PASS_FILE(TEST_CREATE_FILE.out.outfile)
         TEST_PASS_FOLDER(TEST_CREATE_FOLDER.out.outfolder)
